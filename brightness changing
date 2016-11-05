@@ -1,0 +1,148 @@
+#include <linux/init.h>
+#include <linux/module.h>
+ #include <linux/kernel.h>
+ #include<linux/cdev.h>
+ #include<asm/uaccess.h>
+ #include<linux/fs.h>
+ 
+ char data[100];
+ 
+ struct cdev *mcdev;
+ int major;
+ int ret;
+ dev_t dev_num;
+  int i;
+ 
+ #define DEVICE_NAME "new_dev_1"
+ 
+ 
+ int dev_open (struct inode *inode, struct file * file_p)
+  {
+  		printk(KERN_INFO "Device opened");
+  		return 0;
+  
+  }
+ 
+  int dev_close (struct inode *inode, struct file *file_p)
+  {
+  		printk(KERN_INFO "Closing");
+  		return 0;
+  		
+  
+  }
+  ssize_t dev_read (struct file * file_p, char *buff_store, size_t count, loff_t *curr)
+ {
+ 	 struct file *f;
+ 	 char cache[5];
+ 	 mm_segment_t fs;
+ 	
+ 	 
+ 	 for(i=0;i<5;i++)
+ 	 	cache[i]=0;
+ 	 
+ 	 printk(KERN_INFO "reading\n");
+ 	 f = filp_open("/sys/class/backlight/intel_backlight/brightness", O_RDONLY, 0);
+ 	 if(f==NULL)
+ 	 	printk(KERN_INFO "filpopen error!!\n");
+ 	 else
+ 	 {
+ 	 	printk(KERN_INFO"back lightopened for reading\n");
+ 	 	fs = get_fs();
+ 	 	set_fs(get_ds());
+ 	 	f->f_pos = 0;
+ 	 	i=f->f_op->read(f,cache,3, &f->f_pos);
+ 	 	set_fs(fs);
+ 	 	printk(KERN_INFO "cache:%s  read : %d\n",cache,i);
+ 	 	filp_close(f,NULL);
+ 	 }
+ 	 ret = copy_to_user(buff_store,cache,i);
+ 	 return ret;
+ 	 
+ }  
+ 
+ 
+ ssize_t dev_write (struct file *file_p, const char *buff_src , size_t count, loff_t * curr)
+ {
+ 	 struct file *f;
+ 	 mm_segment_t fs;
+ 	 printk(KERN_INFO "writing\n");
+ 	 
+ 	
+ 	 f = filp_open("/sys/class/backlight/intel_backlight/brightness", O_WRONLY, 0);
+ 	  if(f==NULL)
+ 	 	printk(KERN_INFO "filpopen error!!\n");
+ 	 else
+ 	 {
+ 	 	printk(KERN_INFO"back lightopened for writing\n");
+ 	 	fs = get_fs();
+ 	 	set_fs(get_ds());
+ 	 	f->f_pos = 0;
+ 	 	i=f->f_op->write(f,buff_src,count, &f->f_pos);
+ 	 	set_fs(fs);
+ 	 	printk(KERN_INFO "cache:%s  i: %d\n",buff_src,i);
+ 	 	filp_close(f,NULL);
+ 	 }
+ 	 
+ 	// len = copy_from_user(data,buff_src,count);
+ 	 return count;
+ }
+ 
+ 
+ 
+ struct file_operations fops ={
+ 	
+ 		.owner = THIS_MODULE,
+ 		.open = dev_open,
+ 		.release = dev_close,
+ 		.write = dev_write,
+ 		.read = dev_read
+ 
+ 
+ };
+ 
+  
+static int my_init(void)
+{
+	printk(KERN_INFO "initializing");
+	ret = alloc_chrdev_region(&dev_num,0,1,DEVICE_NAME);
+	if(ret<0)
+	{
+		printk(KERN_INFO "Failed to allocate\n");
+		return ret;
+	}
+	
+	major =MAJOR(dev_num);
+	
+	printk(KERN_INFO "use  mknod /dev/%s c %d 0\n",DEVICE_NAME,major);
+	
+	mcdev = cdev_alloc();
+	mcdev->ops = &fops;
+	mcdev->owner= THIS_MODULE;
+	
+	ret = cdev_add(mcdev ,dev_num,1);
+	if(ret <0)
+	{
+		printk(KERN_INFO "unable to add device to kernel");
+		return ret;
+	}
+
+	
+	return 0;
+	
+	
+}
+
+ 
+ 
+static void my_exit(void)
+{
+	
+	cdev_del(mcdev);
+	unregister_chrdev(MAJOR(dev_num),DEVICE_NAME);
+	//unregister_chrdev_region(dev_num,1);
+	printk(KERN_INFO "removing");
+         
+}
+ 
+module_init(my_init);
+module_exit(my_exit);
